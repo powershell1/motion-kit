@@ -1,0 +1,6 @@
+1. For iOS:
+   Open your project in Xcode (Runner.xcworkspace).
+   In the Project Navigator (left sidebar), select the Runner target.
+   Drag and drop the hand_landmarker.task file into the Runner group/folder within the Project Navigator.
+   When prompted, ensure that "Copy items if needed" is checked and that the file is added to the Runner target.
+   You can verify this by checking the "Build Phases" tab for the Runner target, under "Copy Bundle Resources". The hand_landmarker.task file should be listed there.
