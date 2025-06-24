@@ -51,7 +51,8 @@ class HomeScreen extends StatelessWidget {
               size: 100,
               color: Colors.deepPurple,
             ),
-            const SizedBox(height: 30),            const Text(
+            const SizedBox(height: 30),
+            const Text(
               'AI Motion Detection',
               style: TextStyle(
                 fontSize: 24,

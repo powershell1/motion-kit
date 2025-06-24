@@ -34,30 +34,19 @@ class _HandPoseDetectorViewState extends State<HandPoseDetectorView> {
   bool _showPoseNumbers = false;
   bool _showConnections = true;
 
-  // Variables for circle interaction
-  bool _isHandInCircle = false;
-  DateTime? _handInCircleStartTime;
-
-  // New state variables for gesture detection
-  String _rpmText = "RPM: 0";
+  // Rotation tracking variables
   int _rotationCount = 0;
-  DateTime? _lastRotationCompleteTime;
-
-  // Variables for circular gesture calculation
-  double _accumulatedAngle = 0.0;
-  double? _previousAngleRad; // Angle in radians
-
-  // Helper function for angle difference
-  double _calculateAngleDifference(double angle1Rad, double angle2Rad) {
-    double diff = angle2Rad - angle1Rad;
-    while (diff <= -math.pi) {
-      diff += 2 * math.pi;
-    }
-    while (diff > math.pi) {
-      diff -= 2 * math.pi;
-    }
-    return diff;
-  }
+  double? _previousAngle;
+  double _totalRotation = 0.0;
+  bool _isHandInRadius = false;
+  Vector3? _previousHandPosition;
+  
+  // Hand landmark indices for center calculation
+  static const int _wristIndex = 0;
+  static const int _middleFingerMcpIndex = 9;
+  static const int _indexFingerMcpIndex = 5;
+  static const int _ringFingerMcpIndex = 13;
+  static const int _pinkyMcpIndex = 17;
 
   @override
   void dispose() async {
@@ -123,8 +112,7 @@ class _HandPoseDetectorViewState extends State<HandPoseDetectorView> {
             ],
           ),
         ],
-      ),
-      body: Stack(
+      ),      body: Stack(
         children: [
           DetectorView(
             title: 'Hand & Pose Detector',
@@ -134,14 +122,36 @@ class _HandPoseDetectorViewState extends State<HandPoseDetectorView> {
             initialCameraLensDirection: _cameraLensDirection,
             onCameraLensDirectionChanged: (value) => _cameraLensDirection = value,
           ),
+          // Control buttons
           Positioned(
-            top: 20,
-            left: 20,
-            child: ElevatedButton(
-              onPressed: () {
-                setState(switchingSide);
-              },
-              child: Text(_rpmText),
+            bottom: 20,
+            right: 20,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.extended(
+                  onPressed: () {
+                    setState(() {
+                      switchingSide();
+                      _resetRotationTracking();
+                    });
+                  },
+                  label: Text('Target: ${side == Handedness.left ? "Left" : "Right"}'),
+                  icon: Icon(Icons.swap_horiz),
+                  heroTag: "switch_hand",
+                ),
+                SizedBox(height: 10),
+                FloatingActionButton.extended(
+                  onPressed: () {
+                    setState(() {
+                      _resetRotationTracking();
+                    });
+                  },
+                  label: Text('Reset Count'),
+                  icon: Icon(Icons.refresh),
+                  heroTag: "reset_count",
+                ),
+              ],
             ),
           ),
         ],
@@ -200,9 +210,7 @@ class _HandPoseDetectorViewState extends State<HandPoseDetectorView> {
           showPoseNumbers: _showPoseNumbers,
           showConnections: _showConnections,
         );
-        _customPaint = CustomPaint(painter: painter);
-
-        // Build text output
+        _customPaint = CustomPaint(painter: painter);        // Build text output
         String outputText = 'Poses: ${poses.length}\n';
         if (detectedHands.isNotEmpty) {
           for (int i = 0; i < detectedHands.length; i++) {
@@ -213,8 +221,15 @@ class _HandPoseDetectorViewState extends State<HandPoseDetectorView> {
         } else {
           outputText += 'No hands detected\n';
         }
+        
+        // Add rotation tracking information
+        outputText += '\n--- Rotation Tracking ---\n';
+        outputText += 'Target Hand: ${side == Handedness.left ? "Left" : "Right"}\n';
+        outputText += 'Hand in Radius: ${_isHandInRadius ? "YES" : "NO"}\n';
+        outputText += 'Rotation Count: $_rotationCount\n';
+        outputText += 'Current Rotation: ${(_totalRotation * 180 / math.pi).toStringAsFixed(1)}°\n';
+        
         _text = outputText.trim();
-        _text = (_text ?? "") + "\\n$_rpmText"; // Append RPM text
 
         // The circle drawing logic seems specific to pose landmarks,
         // ensure it still makes sense or adjust as needed.
@@ -226,111 +241,48 @@ class _HandPoseDetectorViewState extends State<HandPoseDetectorView> {
           if (rightShoulder != null && leftShoulder != null) {
             Vector3 centerShoulder = Vector3(
               (rightShoulder.x + leftShoulder.x) / 2,
-              (rightShoulder.y + leftShoulder.y) / 2,
+              (rightShoulder.y + leftShoulder.y) / 2 + 10,
               (rightShoulder.z + leftShoulder.z) / 2,
             );
             Vector3 rightCollarbone = Vector3(
                 (centerShoulder.x + rightShoulder.x) / 2,
-                (centerShoulder.y + rightShoulder.y) / 2 - 1, // Adjusted for better visibility
+                (centerShoulder.y + rightShoulder.y) / 2 + 10, // Adjusted for better visibility
                 (centerShoulder.z + rightShoulder.z) / 2
             );
             Vector3 leftCollarbone = Vector3(
                 (centerShoulder.x + leftShoulder.x) / 2,
-                (centerShoulder.y + leftShoulder.y) / 2 - 1, // Adjusted for better visibility
+                (centerShoulder.y + leftShoulder.y) / 2 + 10, // Adjusted for better visibility
                 (centerShoulder.z + leftShoulder.z) / 2
             );
             Vector3 targetCollarbone = side == Handedness.left
                 ? leftCollarbone
-                : rightCollarbone;
-
-            double distance = (rightShoulder.x - leftShoulder.x).abs();
-            double radius = distance / 10; // Adjust radius based on distance
+                : rightCollarbone;            double distance = (rightShoulder.x - leftShoulder.x).abs();
+            double radius = distance / 10 * 1.75; // Adjust radius based on distance
 
             if (targetHandLandmarks != null) {
-              HandLandmark targetLandmark = targetHandLandmarks.landmarks[10]; // Assuming landmark 10 is a fingertip or palm center
-              double currentHandX = targetLandmark.x;
-              double currentHandY = targetLandmark.y;
-
-              // Calculate distance for the 10-second hold logic (existing)
-              double distanceTo = distanceCalculation(
-                targetCollarbone.x,
-                targetCollarbone.y,
-                currentHandX,
-                currentHandY,
-              );
-
-              if (distanceTo < radius) {
-                // Existing 10-second hold logic
-                if (!_isHandInCircle) {
-                  _isHandInCircle = true;
-                  _handInCircleStartTime = DateTime.now();
-                } else {
-                  if (_handInCircleStartTime != null &&
-                      DateTime.now().difference(_handInCircleStartTime!).inSeconds >= 10) {
-                    setState(switchingSide);
-                    _isHandInCircle = false;
-                    _handInCircleStartTime = null;
-                  }
-                }
-
-                // New RPM Calculation Logic
-                // Use targetCollarbone as the center of rotation
-                double centerX = targetCollarbone.x;
-                double centerY = targetCollarbone.y;
-
-                double currentAngleRad = math.atan2(currentHandY - centerY, currentHandX - centerX);
-
-                if (_previousAngleRad != null) {
-                  double deltaAngle = _calculateAngleDifference(_previousAngleRad!, currentAngleRad);
-                  _accumulatedAngle += deltaAngle;
-
-                  if (_accumulatedAngle.abs() >= 2 * math.pi) { // Full circle completed
-                    _rotationCount++;
-                    DateTime now = DateTime.now();
-                    if (_lastRotationCompleteTime != null) {
-                      double timeDiffSeconds = now.difference(_lastRotationCompleteTime!).inMilliseconds / 1000.0;
-                      if (timeDiffSeconds > 0) { // Avoid division by zero if frames are too fast
-                        double rpm = (1.0 / timeDiffSeconds) * 60.0;
-                        print(rpm);
-                        _rpmText = "RPM: ${rpm.toStringAsFixed(1)}";
-                      }
-                    }
-                    _lastRotationCompleteTime = now;
-                    _accumulatedAngle -= (2 * math.pi * _accumulatedAngle.sign); // Reset accumulated angle for the next circle
-                  }
-                }
-                _previousAngleRad = currentAngleRad;
-                // if (_gesturePoints.length > 50) _gesturePoints.removeAt(0); // Optional: manage gesture points list size
-                // _gesturePoints.add(Offset(currentHandX, currentHandY)); // Optional: for drawing
-
+              // Calculate hand center position
+              Vector3 handCenter = _getHandCenter(targetHandLandmarks.landmarks);
+              
+              // Check if hand is within the target circle radius
+              double handToTargetDistance = _calculateDistance(handCenter, targetCollarbone);
+              _isHandInRadius = handToTargetDistance <= radius;
+              
+              if (_isHandInRadius) {
+                // Update rotation tracking only when hand is in radius
+                _updateRotationTracking(targetHandLandmarks.landmarks);
               } else {
-                // Hand is out of the circle, reset the 10-second timer (existing)
-                _isHandInCircle = false;
-                _handInCircleStartTime = null;
-
-                // Reset RPM calculation variables
-                _previousAngleRad = null;
-                _accumulatedAngle = 0.0;
-                _rotationCount = 0; // Reset count if hand leaves area
-                _lastRotationCompleteTime = null;
-                _rpmText = "RPM: 0";
-                // _gesturePoints.clear(); // Optional: clear path
+                // Reset rotation tracking when hand leaves radius
+                if (_previousAngle != null) {
+                  _resetRotationTracking();
+                }
               }
             } else {
-              // No target hand landmarks, reset the 10-second timer (existing)
-              _isHandInCircle = false;
-              _handInCircleStartTime = null;
-
-              // Reset RPM calculation variables
-              _previousAngleRad = null;
-              _accumulatedAngle = 0.0;
-              _rotationCount = 0;
-              _lastRotationCompleteTime = null;
-              _rpmText = "RPM: 0";
-              // _gesturePoints.clear(); // Optional: clear path
-            }
-
-            painter.drawCircle(targetCollarbone.x, targetCollarbone.y, radius);
+              // No hand detected, reset tracking
+              _isHandInRadius = false;
+              if (_previousAngle != null) {
+                _resetRotationTracking();
+              }
+            }            painter.drawCircle(targetCollarbone.x, targetCollarbone.y, radius, isActive: _isHandInRadius);
             // painter.drawCircle(leftCollarbone.x, leftCollarbone.y, radius);
           }
         }
@@ -347,5 +299,73 @@ class _HandPoseDetectorViewState extends State<HandPoseDetectorView> {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  // Utility methods for hand tracking
+  Vector3 _getHandCenter(List<HandLandmark> landmarks) {
+    if (landmarks.length < 21) return Vector3.zero();
+    
+    // Calculate center using wrist and MCP joints
+    final wrist = landmarks[_wristIndex];
+    final indexMcp = landmarks[_indexFingerMcpIndex];
+    final middleMcp = landmarks[_middleFingerMcpIndex];
+    final ringMcp = landmarks[_ringFingerMcpIndex];
+    final pinkyMcp = landmarks[_pinkyMcpIndex];
+    
+    return Vector3(
+      (wrist.x + indexMcp.x + middleMcp.x + ringMcp.x + pinkyMcp.x) / 5,
+      (wrist.y + indexMcp.y + middleMcp.y + ringMcp.y + pinkyMcp.y) / 5,
+      (wrist.z + indexMcp.z + middleMcp.z + ringMcp.z + pinkyMcp.z) / 5,
+    );
+  }
+  
+  double _calculateHandAngle(List<HandLandmark> landmarks) {
+    if (landmarks.length < 21) return 0.0;
+    
+    // Use wrist to middle finger MCP for angle calculation
+    final wrist = landmarks[_wristIndex];
+    final middleMcp = landmarks[_middleFingerMcpIndex];
+    
+    return math.atan2(
+      middleMcp.y - wrist.y,
+      middleMcp.x - wrist.x,
+    );
+  }
+  
+  double _calculateDistance(Vector3 point1, Vector3 point2) {
+    return math.sqrt(
+      math.pow(point1.x - point2.x, 2) +
+      math.pow(point1.y - point2.y, 2) +
+      math.pow(point1.z - point2.z, 2)
+    );
+  }
+  
+  void _updateRotationTracking(List<HandLandmark> landmarks) {
+    final currentAngle = _calculateHandAngle(landmarks);
+    
+    if (_previousAngle != null) {
+      double angleDifference = currentAngle - _previousAngle!;
+      
+      // Normalize angle difference to [-π, π]
+      while (angleDifference > math.pi) angleDifference -= 2 * math.pi;
+      while (angleDifference < -math.pi) angleDifference += 2 * math.pi;
+      
+      _totalRotation += angleDifference;
+      
+      // Count full rotations (360 degrees = 2π radians)
+      if (_totalRotation.abs() >= 2 * math.pi) {
+        _rotationCount += (_totalRotation > 0) ? 1 : -1;
+        _totalRotation = _totalRotation % (2 * math.pi);
+      }
+    }
+    
+    _previousAngle = currentAngle;
+  }
+  
+  void _resetRotationTracking() {
+    _rotationCount = 0;
+    _previousAngle = null;
+    _totalRotation = 0.0;
+    _previousHandPosition = null;
   }
 }

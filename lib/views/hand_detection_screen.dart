@@ -1,6 +1,8 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
+import 'package:motion_kit/services/gesture_classification.dart';
+import 'dart:math';
 
 import '../services/hand_landmarker_service.dart';
 import 'detector_view.dart';
@@ -11,12 +13,32 @@ class HandDetectorView extends StatefulWidget {
   State<StatefulWidget> createState() => _HandDetectorViewState();
 }
 
+int random(int min, int max) {
+  return min + Random().nextInt(max - min);
+}
+
 class _HandDetectorViewState extends State<HandDetectorView> {
   bool _canProcess = true;
   bool _isBusy = false;
   CustomPaint? _customPaint;
   String? _text;
   var _cameraLensDirection = CameraLensDirection.back;
+  final GestureClassification _gestureClassification = GestureClassification();
+
+  int m1 = 0;
+  int m2 = 0;
+
+  void generateRandomNumbers() {
+    m1 = random(0, 10);
+    m2 = random(0, 10 - m1);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _gestureClassification.initInterpreter();
+    generateRandomNumbers();
+  }
 
   @override
   void dispose() async {
@@ -24,15 +46,38 @@ class _HandDetectorViewState extends State<HandDetectorView> {
     super.dispose();
   }
 
+  int? gestureNumber;
+
   @override
   Widget build(BuildContext context) {
-    return DetectorView(
-      title: 'Hand Detector',
-      customPaint: _customPaint,
-      text: _text,
-      onImage: _processImage,
-      initialCameraLensDirection: _cameraLensDirection,
-      onCameraLensDirectionChanged: (value) => _cameraLensDirection = value,
+    return Stack(
+      children: [
+        DetectorView(
+          title: 'Hand Detector',
+          customPaint: _customPaint,
+          text: _text,
+          onImage: _processImage,
+          initialCameraLensDirection: _cameraLensDirection,
+          onCameraLensDirectionChanged: (value) => _cameraLensDirection = value,
+        ),
+        Positioned(
+          top: 10,
+          left: 40,
+          child: GestureDetector(
+            onTap: () {
+              setState(generateRandomNumbers);
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8.0),
+              color: Colors.white.withOpacity(0.7),
+              child: Text(
+                '$m1 + $m2',
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -69,9 +114,14 @@ class _HandDetectorViewState extends State<HandDetectorView> {
             handsText += 'Hand ${i + 1}: ${hand.handedness} (${hand.landmarks.length} landmarks)\\n';
             // Analyze gesture for each hand
             if (hand.landmarks.length >= 21) { // Ensure enough landmarks for gesture analysis
-              final gesture = _analyzeHandGesture(hand.landmarks);
-              if (gesture != null) {
-                handsText += 'Gesture: $gesture\\n';
+              final gesture = _gestureClassification.checkGesture(hand);
+              if (gesture.type.index < 11) {
+                gestureNumber = gesture.type.index;
+                if (gestureNumber == m1+m2) {
+                  setState(generateRandomNumbers);
+                }
+              } else {
+                gestureNumber = null; // Reset if gesture is not recognized
               }
             }
           }
@@ -97,37 +147,5 @@ class _HandDetectorViewState extends State<HandDetectorView> {
     if (mounted) {
       setState(() {});
     }
-  }
-
-  // Returns a string describing the gesture, or null if no specific gesture is detected
-  String? _analyzeHandGesture(List<HandLandmark> landmarks) {
-    if (landmarks.length < 21) return null;
-
-    // Example: Simple gesture detection
-    // You can implement more sophisticated gesture recognition here
-    
-    // Check if pointing (index finger extended, others folded)
-    final indexTip = landmarks[8];
-    final indexPip = landmarks[6];
-    final middleTip = landmarks[12];
-    final middlePip = landmarks[10];
-    final ringTip = landmarks[16];
-    final ringPip = landmarks[14];
-    final pinkyTip = landmarks[20];
-    final pinkyPip = landmarks[18];
-    
-    // Simple pointing detection (index finger up, others down)
-    bool isPointing = indexTip.y < indexPip.y && // Index finger extended
-                     middleTip.y > middlePip.y && // Middle finger folded
-                     ringTip.y > ringPip.y &&    // Ring finger folded
-                     pinkyTip.y > pinkyPip.y;    // Pinky folded
-    
-    if (isPointing) {
-      return 'Pointing 👉';
-    }
-    
-    // You can add more gesture detection logic here
-    // For example: thumbs up, peace sign, fist, etc.
-    return null; // No specific gesture detected
   }
 }

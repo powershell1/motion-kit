@@ -2,6 +2,30 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
+enum LandmarksPoint {
+  wrist,
+  thumbCmc,
+  thumbMcp,
+  thumbIp,
+  thumbTip,
+  indexFingerMcp,
+  indexFingerPip,
+  indexFingerDip,
+  indexFingerTip,
+  middleFingerMcp,
+  middleFingerPip,
+  middleFingerDip,
+  middleFingerTip,
+  ringFingerMcp,
+  ringFingerPip,
+  ringFingerDip,
+  ringFingerTip,
+  pinkyMcp,
+  pinkyPip,
+  pinkyDip,
+  pinkyTip,
+}
+
 class HandLandmark {
   final double x;
   final double y;
@@ -18,6 +42,14 @@ class HandLandmark {
       x: (map['x'] as num).toDouble(),
       y: (map['y'] as num).toDouble(),
       z: (map['z'] as num).toDouble(),
+    );
+  }
+
+  factory HandLandmark.clone(HandLandmark landmark) {
+    return HandLandmark(
+      x: landmark.x,
+      y: landmark.y,
+      z: landmark.z,
     );
   }
 }

@@ -6,11 +6,12 @@ import '../../services/hand_landmarker_service.dart';
 import 'coordinates_translator.dart';
 
 class Circle {
-  Circle(this.x, this.y, this.radius);
+  Circle(this.x, this.y, this.radius, {this.isActive = false});
 
   final double x;
   final double y;
   final double radius;
+  final bool isActive; // Whether hand is in radius
 }
 
 class HandPosePainter extends CustomPainter {
@@ -34,9 +35,8 @@ class HandPosePainter extends CustomPainter {
   final bool showPoseNumbers;
   final bool showConnections;
   final List<Circle> circles = [];
-
-  void drawCircle(double x, double y, double radius) {
-    circles.add(Circle(x, y, radius));
+  void drawCircle(double x, double y, double radius, {bool isActive = false}) {
+    circles.add(Circle(x, y, radius, isActive: isActive));
   }
 
   @override
@@ -92,9 +92,7 @@ class HandPosePainter extends CustomPainter {
         _drawHandLandmarks(canvas, handLandmarks, size, handLandmarkPaint, textPainter);
         _drawHandConnections(canvas, handLandmarks, size, handConnectionPaint);
       }
-    }
-
-    // Draw circles if any
+    }    // Draw circles if any
     for (final circle in circles) {
       canvas.drawCircle(
         Offset(
@@ -103,9 +101,9 @@ class HandPosePainter extends CustomPainter {
         ),
         circle.radius,
         Paint()
-          ..color = Colors.red
+          ..color = circle.isActive ? Colors.green : Colors.red
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0,
+          ..strokeWidth = circle.isActive ? 4.0 : 3.0,
       );
     }
   }
